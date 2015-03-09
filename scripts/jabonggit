@@ -1,0 +1,128 @@
+#!/bin/bash
+
+# Text Formating
+txtgrn=$(tput setaf 2) # Green
+txtwht=$(tput setaf 7) # White
+txtblu=$(tput setaf 4) # Blue
+txtyel=$(tput setaf 3) # Blue
+txtred=$(tput setaf 1) # red
+txtrst=$(tput sgr0) # Text reset.
+txtbold=$(tput bold) # Text Bold
+
+
+##### Constants
+originalPath=`pwd`;
+BranchDir="/opt/lampp/htdocs/jabong-git/";
+SelectedBranch=
+
+
+
+
+##### Functions
+
+function show_available_branches() {
+
+echo "${txtblu}${txtbold}Showing list of Available Branches:${txtrst}";
+DirListing=`ls $BranchDir | egrep -i '(INDFAS|master)'`;
+
+i=1;
+for var in $DirListing
+do 
+   BRANCH[$i]=$var;
+   echo "$i -- ${BRANCH[$i]}";
+
+   i=`expr $i + 1`;
+done
+
+echo "${txtyel}Choose a Branch to continue:${txtrst}";
+read SelectedBranchIndex;
+
+# check if the correct value is provided by user.
+if [ $SelectedBranchIndex -gt 0 ] && [ $SelectedBranchIndex -lt $i ];
+then 
+    SelectedBranch=${BRANCH[$SelectedBranchIndex]};
+    return 1;
+fi
+
+echo "${txtred}${txtbold}Please make correct selection.${txtrst}"
+show_available_branches
+
+}
+
+
+
+function display_options() {
+
+echo "${txtblu}${txtbold}SELECTED BRANCH: $SelectedBranch${txtrst}";
+echo "${txtyel}What would you like to do ?${txtrst}";
+echo "1 -- Schema Updater";
+echo "2 -- Schema Updater (DbTable)";
+echo "3 -- Run Worker";
+echo "4 -- Start Solr";
+echo "5 -- Run Solr Imports";
+echo "6 -- Run Worker (Partial)";
+
+read ChosenOption;
+
+cliPatch="${BranchDir}${SelectedBranch}/bob/cli/index.php";
+workerPath="${BranchDir}${SelectedBranch}/alice/alice/worker/Worker.php";
+solrPath="${BranchDir}${SelectedBranch}/solr2"
+
+
+
+case $ChosenOption in
+  1)
+     echo "Running Schema Updater ....";
+     php ${cliPatch} --env=dev --module=maintenance --controller=schema-updater --action=index
+     echo "${txtgrn}${txtbold} Finished. ${txtrst}";
+      
+     ;;
+  2)
+     echo "Running DbTable Schema updter";
+     php ${cliPatch} --env=dev --module=maintenance --controller=schema-updater --action=dbtable
+     echo "${txtgrn}${txtbold} Finished. ${txtrst}";
+     ;;
+  3)
+     echo "Running Worker";
+     php ${workerPath} --type=full
+     echo "${txtgrn}${txtbold} Finished. ${txtrst}";
+     ;;
+  4)
+     echo "Starting Solr ...";
+     
+     cd ${solrPath}
+     `java -jar start.jar` &
+     cd ${originalPath}
+     echo "${txtgrn}${txtbold} Finished. ${txtrst}";
+     ;;
+  5)
+     echo "Running Solr imports...";
+     php ${cliPatch} --env=dev --module=solr-ext --controller=import --action=import
+     echo "${txtgrn}${txtbold} Finished. ${txtrst}";
+     ;;
+  6)
+     echo "Running Worker [partial]...";
+     php ${workerPath} --type=partial
+     echo "${txtgrn}${txtbold} Finished. ${txtrst}";
+     ;;
+
+  *)
+     echo "Please select a valid options from above.";
+     ;;
+esac
+
+display_options
+
+}
+
+
+##### MAIN
+
+if [ "$SelectedBranch" = "" ]
+then
+     show_available_branches
+    
+fi
+
+display_options
+# Now we have selected branch, display options

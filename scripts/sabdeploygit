@@ -1,0 +1,378 @@
+#!/bin/bash
+
+# Text Formating
+txtgrn=$(tput setaf 2) # Green
+txtwht=$(tput setaf 7) # White
+txtblu=$(tput setaf 4) # Blue
+txtyel=$(tput setaf 3) # Blue
+txtred=$(tput setaf 1) # red
+txtrst=$(tput sgr0) # Text reset.
+txtbold=$(tput bold) # Text Bold.
+
+##### functions useful
+
+function chooseDB() {
+
+ echo "Do you want to use the existing Database (Y/N)?";
+ read isNewDB;
+
+ if [ $isNewDB == "Y" ] || [ $isNewDB == "y" ]; then
+    ## show a list of db to use
+    echo "Select a DB to use from below.";
+    runmysql "SHOW DATABASES";
+    echo "Enter your choice:"; #need to apply some validations here
+    read dbname;
+    DB_TO_USE=$dbname;
+ else
+    ## assume its (N)
+    echo "Enter new DB name:";
+    read dbname;
+    runmysql "DROP DATABASE IF EXISTS $dbname";
+    runmysql "CREATE DATABASE $dbname";
+    ## db created lets import sample data
+    echo "Importing Database ...";
+    echo "This may take a while.. have some coffee till then..";
+    #gunzip < /home/jackson/data/jabong-master.sql.gz | mysql -u root -p123456 ${dbname} &
+    mysql -u root -p123456 ${dbname} < $HOME/data/19533.sql;
+    spinner $!  #show spinner till above process finishes.
+    echo "Database Exported";
+    #echo "-- Importing cms tables --"
+    #mysql -u root -p123456 ${dbname} < $HOME/data/cms_content.sql;
+    echo "--Done--";
+    DB_TO_USE=$dbname;
+ fi
+
+}
+
+function configSettings() {
+
+echo "Copying Alice config.";
+cp /home/jackson/data/configs/config.php ${BRANCHDIRECTORY}/alice/alice/protected/config/config.php
+
+echo "Copying dev.ini";
+cp /home/jackson/data/configs/dev.ini ${BRANCHDIRECTORY}/bob/application/configs/dev.ini
+
+echo "Copying log.php";
+cp /home/jackson/data/configs/log.php ${BRANCHDIRECTORY}/bob/application/configs/log.php
+
+echo "Copying config.inc.php";
+cp /home/jackson/data/configs/config.inc.php ${BRANCHDIRECTORY}/payment_jabong/includes/config.inc.php
+
+#update config.php
+echo "Updating Config.php";
+updateConfigDotPhp
+
+#update dev.ini
+echo "Updating Dev.ini";
+updateDevDotIni
+
+#update payment config
+echo "Updating config.inc.php";
+setPaymentConfig
+
+#menu related settings
+echo "making menu Configs";
+mkdir ${BRANCHDIRECTORY}/data
+mkdir ${BRANCHDIRECTORY}/data/uploads
+mkdir ${BRANCHDIRECTORY}/data/uploads/menu
+mkdir ${BRANCHDIRECTORY}/workerdata
+chmod -R 777 ${BRANCHDIRECTORY}/data/uploads/menu
+chmod -R 777 ${BRANCHDIRECTORY}/workerdata
+echo "moving menu files";
+sleep 5
+php ${BRANCHDIRECTORY}/bob/cli/index.php --env=dev --module=catalog-ext --controller=cronjob --action=top-nav-migration
+
+}
+
+function updateConfigDotPhp() {
+
+echo "
+define('ALICE_IMAGE_HOST', 'http://images.${USERINPUT_lower}.qw/');
+define('ALICE_DEV_MYSQL_DB', '${DB_TO_USE}');
+define('ALICE_HOST', 'http://alice.${USERINPUT_lower}.qw');
+define('WORKER_DATA_SAVE_PATH', '/opt/lampp/htdocs/${USERINPUT_lower}/workerdata');
+define('ALICE_MOBILE_API_URL', 'http://alice.${USERINPUT_lower}.qw/mobapi');
+define('ALICE_BOB_URL', 'http://bob.${USERINPUT_lower}.qw/alice/');
+define('PAYMENT_DOMAIN', 'payment.${USERINPUT_lower}.qw');
+define('JABONG_PAYMENT_URL', 'http://payment.${USERINPUT_lower}.qw');
+define('MOBILE_ALICE_HOST', 'm-alice.${USERINPUT_lower}.qw');
+" >> ${BRANCHDIRECTORY}/alice/alice/protected/config/config.php;
+
+}
+
+function updateDevDotIni() {
+
+echo "
+resources.multidb.main.dbname = '${DB_TO_USE}'
+alice.hostname = 'alice.${USERINPUT_lower}.qw'
+feeds.db.database = '${DB_TO_USE}'
+catalog.image_base_url = 'http://images.${USERINPUT_lower}.qw'
+" >> ${BRANCHDIRECTORY}/bob/application/configs/dev.ini;
+
+}
+
+function setPaymentConfig() {
+  
+echo "
+define('DB_NAME', '${DB_TO_USE}'); 
+" >> ${BRANCHDIRECTORY}/payment_jabong/includes/config.inc.php 
+}
+
+
+
+function writeVhosts() {
+
+# if the file already exists remove it
+vHostsFile="/opt/lampp/etc/extra/jade/${USERINPUT}.conf";
+if [ -f ${vHostsFile} ]; then
+sudo rm ${vHostsFile} 
+fi
+
+# create vHosts file
+sudo touch ${vHostsFile}
+sudo chmod 777 ${vHostsFile}
+
+echo "Making entries in vHost.";
+echo "
+###################################################
+## [Starts] vhost for alice (${USERINPUT})
+###################################################
+
+<VirtualHost *:80>
+# The name to respond to
+ServerName alice.${USERINPUT_lower}.qw
+ServerAlias m-alice.${USERINPUT_lower}.qw
+SetEnv APPLICATION_ENV dev
+DocumentRoot '${BRANCHDIRECTORY}/alice/alice/public'
+# A few helpful settings...
+<Directory '${BRANCHDIRECTORY}/alice/alice/public'>
+allow from all
+order allow,deny
+# Enables .htaccess files for this site
+AllowOverride All
+</Directory>
+# Apache will look for these two files, in this order, if no file is specified in the URL
+DirectoryIndex index.php index.html
+</VirtualHost>
+###################################################
+## [ENDS] vhost for alice (${USERINPUT})
+###################################################
+
+#################################################
+## [Starts] vhost for bob (${USERINPUT})
+################################################
+
+<VirtualHost *:80>
+# The name to respond to
+ServerName bob.${USERINPUT_lower}.qw
+SetEnv APPLICATION_ENV dev
+# Folder where the files live
+DocumentRoot '${BRANCHDIRECTORY}/bob/public'
+# A few helpful settings...
+<Directory '${BRANCHDIRECTORY}/bob/public'>
+allow from all
+order allow,deny
+# Enables .htaccess files for this site
+AllowOverride All
+</Directory>
+# Apache will look for these two files, in this order, if no file is specified in the URL
+DirectoryIndex index.php index.html
+</VirtualHost>
+################################################
+## [ENDS] vhost for bob (INDFAS-${USERINPUT})
+################################################
+
+
+################################################
+## [starts] vhost for Images
+################################################
+
+<VirtualHost *:80>
+# The name to respond to
+ServerName images.${USERINPUT_lower}.qw
+# Folder where the files live
+DocumentRoot '${BRANCHDIRECTORY}/bob/data/media'
+#ErrorLog C:/wamp/www/infas/bob/logs/error.log
+#CustomLog C:/wamp/www/infas/bob/logs/access.log common
+
+# A few helpful settings...
+<Directory '${BRANCHDIRECTORY}/bob/data/media'>
+allow from all
+order allow,deny
+# Enables .htaccess files for this site
+AllowOverride All
+</Directory>
+# Apache will look for these two files, in this order, if no file is specified in the URL
+DirectoryIndex index.php index.html
+</VirtualHost>
+
+################################################
+## [Ends] vhost for Images
+################################################
+
+################################################
+## [Starts] payment
+################################################
+<VirtualHost *:80>
+# The name to respond to
+ServerName payment.${USERINPUT_lower}.qw
+# Folder where the files live
+DocumentRoot '${BRANCHDIRECTORY}/payment_jabong/'
+#ErrorLog C:/wamp/www/infas/bob/logs/error.log
+#CustomLog C:/wamp/www/infas/bob/logs/access.log common
+
+# A few helpful settings...
+<Directory '${BRANCHDIRECTORY}/payment_jabong/'>
+allow from all
+order allow,deny
+# Enables .htaccess files for this site
+AllowOverride All
+</Directory>
+# Apache will look for these two files, in this order, if no file is specified in the URL
+DirectoryIndex index.php index.html
+</VirtualHost>
+
+################################################
+## [Ends] payment
+################################################
+" > ${vHostsFile};
+}
+
+
+function writeHosts() {
+
+# check if we need to make entries in vHosts or not
+if cat /etc/hosts | grep -q ${USERINPUT_lower}; then 
+return # entries already exists exit from here 
+fi
+
+echo "Making entries in Host file.";
+sudo chmod 777 /etc/hosts;
+echo "127.0.0.1	bob.${USERINPUT_lower}.qw" >> /etc/hosts;
+echo "127.0.0.1	alice.${USERINPUT_lower}.qw" >> /etc/hosts;
+echo "127.0.0.1	images.${USERINPUT_lower}.qw" >> /etc/hosts;
+echo "127.0.0.1	payment.${USERINPUT_lower}.qw" >> /etc/hosts;
+echo "127.0.0.1	m-alice.${USERINPUT_lower}.qw" >> /etc/hosts;
+
+}
+
+function applypatch() {
+
+PATCHPATH='/home/jackson/data/patches';
+
+if [ $1 == 'before' ]; then
+    #patch ${PATCHPATH}/patchbefore.diff ${BRANCHDIRECTORY}
+    cd ${BRANCHDIRECTORY};
+    patch -p0 < ${PATCHPATH}/patchbeforegit.diff
+    cd -
+else
+    echo "sdsdsd";
+    #patch ${PATCHPATH}/patchafter.diff ${BRANCHDIRECTORY}
+fi
+
+}
+
+
+function gitclone() {
+
+echo "Cloning GIT branch ${USERINPUT} ...";
+
+  if [ -d "$BRANCHDIRECTORY" ]; then
+      echo "${txtblu}${txtbold} Directory Already Exists!!${txtrst}";
+      echo "${txtblu} cleaning directory contents for fresh checkout ... ${txtrst}";
+      rm -rf "${BRANCHDIRECTORY}/"*;
+  else 
+      mkdir $BRANCHDIRECTORY;
+      echo "${txtblu} created directory ${BRANCHDIRECTORY} ${txtrst}";
+  fi
+ 
+  ##we are here means we are good to take checkout.
+  echo "----------------------------------";
+  echo "         cloning started         ";
+  echo "----------------------------------";
+  cd ${BRANCHDIRECTORY}/../;
+  rm -rf ${BRANCHDIRECTORY};
+  cp -r $HOME/data/git-indfas-repo/master/ $JBGIT/${BRANCHDIRECTORY}
+  #git clone -b ${USERINPUT} git@github.com:jabong/INDFAS.git ${USERINPUT}
+  #git init;
+  #git remote add -t ${USERINPUT} -f origin git@github.com:jabong/INDFAS.git
+  #git checkout ${USERINPUT}
+  echo "----------------------------------";
+  echo "         cloning finished         ";
+  echo "----------------------------------";
+  cd -
+  cd ${BRANCHDIRECTORY}/;
+  git pull;
+  git checkout -b ${USERINPUT}
+}
+
+
+
+##### MAIN PROGRAM Execution
+
+## CONFIGS
+USERINPUT=$1
+
+#terminate execution if the branch name is not valid
+if [ "${USERINPUT}" == "" ];
+then
+   echo "ERROR: Branch name not provided.";
+   exit;
+fi
+
+BRANCHDIRECTORY="/opt/lampp/htdocs/jabong-git/${USERINPUT}";
+cliPatch="${BRANCHDIRECTORY}/bob/cli/index.php";
+USERINPUT_lower=`echo ${USERINPUT} | tr '[:upper:]' '[:lower:]'`;
+
+
+## below works when request is to remove instead of setup 
+if [ "$2" == "--remove" ];
+then
+  echo 'Removing entries from vhost...';
+  sudo rm -f /opt/lampp/etc/extra/jade/${USERINPUT}.conf
+  
+  echo 'Remove folder checked out..';
+  sudo rm -rf ${BRANCHDIRECTORY}
+  
+  echo 'Remove entries from hosts';
+  HOSTS_TEXT=`cat /etc/hosts | grep -v ${USERINPUT_lower}`;
+  sudo echo "$HOSTS_TEXT" > /etc/hosts;
+  
+  echo "Finished";
+  
+  exit;
+fi 
+
+# STEP1: Take branch clone
+gitclone
+#exit;
+
+# STEP2: DB setup
+DB_TO_USE="";
+chooseDB
+#exit;
+
+
+#STEP3: Make vHosts Entry
+writeVhosts
+
+#STEP4: Make HOSTS entry
+writeHosts
+
+#STEP5: Restart servers
+sab restart
+
+#STEP6: Configuring various site settings
+configSettings
+
+
+#STEP7: Apply Before Patch
+applypatch before
+
+#STEP8: Run Schema Updater
+echo "Running Schema Updater ....";
+php ${cliPatch} --env=dev --module=maintenance --controller=schema-updater --action=index
+echo "${txtgrn}${txtbold} Finished. ${txtrst}";
+
+#STEP9: Apply After Patch
+#applypatch after

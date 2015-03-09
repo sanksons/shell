@@ -1,0 +1,45 @@
+#!/bin/bash
+# Clean Diff File, Removing all Minified Js and CSS Files.
+
+# ----------------------------------------------------
+# 	START OF CONFIGURATION (change careful)
+# ----------------------------------------------------
+FILTERDIFF='filterdiff'
+SCRIPT_BASE_DIR='/home/jackson/diffs/clean/diff-exclude.txt';
+INPUT_FILE="/home/jackson/diffs/$1";
+OUTPUT_FILE="/home/jackson/diffs/clean/${1}.clean.diff";
+
+# Taxt Formating
+txtgrn=$(tput setaf 2) # Green
+txtwht=$(tput setaf 7) # White
+txtblu=$(tput setaf 4) # Blue
+txtrst=$(tput sgr0) # Text reset.
+txtbold=$(tput bold) # Text Bold
+
+# ----------------------------------------------------
+# 	END OF CONFIGURATION, DON'T CHANGE MORE
+# ----------------------------------------------------
+
+# ----------------------------------------------------
+#       START OF FUNCTIONS
+# ----------------------------------------------------
+
+# Clean Diff
+function jbCleanDiff()
+{ 
+    echo "Cleaning Diff File ..."
+    $FILTERDIFF --clean --exclude-from-file=$SCRIPT_BASE_DIR $INPUT_FILE > $OUTPUT_FILE
+    echo -e "Created Clean Diff at: \n $OUTPUT_FILE";
+}
+
+
+
+# ----------------------------------------------------
+#       END OF FUNCTIONS
+# ----------------------------------------------------
+
+# ----------------------------------------------------
+#       START OF EXECUTION
+# ----------------------------------------------------
+
+jbCleanDiff $1

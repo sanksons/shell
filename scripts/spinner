@@ -1,0 +1,30 @@
+#!/bin/bash
+
+function datediff() {
+  date1=$1;
+  date2=$2;
+  diff=$(($date2-$date1));
+  ELAPSED_TIME="$(($diff / 60)) minutes and $(($diff % 60)) seconds.";
+}  
+
+    pid=$1;
+    delay=0.15;
+    spinstr='|/-\';
+    startdate=$(date +"%s");
+    ELAPSED_TIME="0 seconds elapsed";
+    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+       currentdate=$(date +"%s");
+       datediff $startdate $currentdate
+       temp=${spinstr#?}
+        printf " [%c]  [Elapsed Time: %s]" "$spinstr" "$ELAPSED_TIME"
+        spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+        printf "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\bb\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b"
+    done
+    printf "    \b\b\b\b"
+    
+    
+ 
+    
+    
+
